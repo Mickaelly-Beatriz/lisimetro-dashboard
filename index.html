@@ -1,0 +1,280 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dashboard Lisímetro</title>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+<style>
+body {
+  margin: 0;
+  font-family: 'Segoe UI', sans-serif;
+  background: #f4f6f9;
+}
+
+/* LOGIN */
+#loginScreen {
+  display:flex;
+  height:100vh;
+  justify-content:center;
+  align-items:center;
+  background:#f4f6f9;
+}
+
+.login-box {
+  background:white;
+  padding:40px;
+  border-radius:12px;
+  box-shadow:0 4px 12px rgba(0,0,0,0.1);
+  width:300px;
+}
+
+.login-box input {
+  width:100%;
+  padding:10px;
+  margin-bottom:10px;
+  border-radius:6px;
+  border:1px solid #ccc;
+}
+
+.login-box button {
+  width:100%;
+  padding:10px;
+  background:#2563eb;
+  color:white;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+.header {
+  background: #1f2937;
+  color: white;
+  padding: 20px;
+  font-size: 22px;
+}
+
+.container {
+  display: flex;
+  padding: 20px;
+  gap: 20px;
+}
+
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+.chart-card { flex: 3; }
+
+.info-card {
+  flex: 1;
+  background: #eef1f5;
+}
+
+.metric { margin-bottom: 25px; }
+
+.metric h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #555;
+}
+
+.metric p {
+  font-size: 22px;
+  margin: 5px 0 0 0;
+  font-weight: bold;
+}
+
+.download-btn {
+  padding:10px;
+  width:100%;
+  background:#2563eb;
+  color:white;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+</style>
+</head>
+
+<body>
+
+<!-- TELA DE LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h2>Login</h2>
+    <input id="email" type="email" placeholder="Email">
+    <input id="senha" type="password" placeholder="Senha">
+    <button onclick="login()">Entrar</button>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="dashboard" style="display:none;">
+
+<div class="header">
+  Dashboard Lisímetro Inteligente
+</div>
+
+<div class="container">
+
+  <div class="card chart-card">
+    <canvas id="grafico"></canvas>
+  </div>
+
+  <div class="card info-card">
+
+    <div class="metric">
+      <h3>Peso Atual</h3>
+      <p id="pesoAtual">--</p>
+    </div>
+
+    <div class="metric">
+      <h3>Última Atualização</h3>
+      <p id="horaAtual">--</p>
+    </div>
+
+    <div class="metric">
+      <h3>Total de Leituras</h3>
+      <p id="totalLeituras">0</p>
+    </div>
+
+    <div class="metric">
+      <button class="download-btn" onclick="baixarCSV()">
+        Baixar Dados (CSV)
+      </button>
+    </div>
+
+  </div>
+
+</div>
+</div>
+
+<script type="module">
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } 
+from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC4AZTPdSGlED9jaIxs8HbKpEj-VPm_O7s",
+  databaseURL: "https://lisimetro-3935e-default-rtdb.firebaseio.com"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
+
+const leiturasRef = ref(db, "leituras/peso");
+
+let labels = [];
+let valores = [];
+
+/* LOGIN */
+window.login = function() {
+  const email = document.getElementById("email").value;
+  const senha = document.getElementById("senha").value;
+
+  signInWithEmailAndPassword(auth, email, senha)
+    .catch(error => alert("Erro no login: " + error.message));
+};
+
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("dashboard").style.display = "block";
+  }
+});
+
+/* GRÁFICO */
+const ctx = document.getElementById('grafico').getContext('2d');
+
+const chart = new Chart(ctx, {
+  type: 'line',
+  data: {
+    labels: labels,
+    datasets: [{
+      label: 'Peso (kg)',
+      data: valores,
+      borderColor: '#2563eb',
+      backgroundColor: 'rgba(37,99,235,0.1)',
+      tension: 0.3,
+      fill: true
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      zoom: {
+        pan: { enabled: true, mode: 'x' },
+        zoom: {
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: 'x'
+        }
+      }
+    }
+  }
+});
+
+/* ATUALIZAÇÃO EM TEMPO REAL */
+onValue(leiturasRef, (snapshot) => {
+
+  labels = [];
+  valores = [];
+
+  snapshot.forEach((child) => {
+    const valor = child.val();
+    labels.push(labels.length + 1);
+    valores.push(parseFloat(valor));
+  });
+
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = valores;
+  chart.update();
+
+  if (valores.length > 0) {
+    const ultimo = valores[valores.length - 1];
+
+    document.getElementById("pesoAtual").innerText =
+      ultimo.toFixed(4) + " kg";
+
+    document.getElementById("horaAtual").innerText =
+      new Date().toLocaleString();
+
+    document.getElementById("totalLeituras").innerText =
+      valores.length;
+  }
+});
+
+/* DOWNLOAD CSV */
+window.baixarCSV = function() {
+
+  let csv = "Indice,Peso(kg)\n";
+
+  for (let i = 0; i < valores.length; i++) {
+    csv += (i+1) + "," + valores[i] + "\n";
+  }
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "medicoes_lisimetro.csv";
+  a.click();
+
+  URL.revokeObjectURL(url);
+};
+
+</script>
+
+</body>
+</html>
