@@ -1,0 +1,319 @@
+<!DOCTYPE html> 
+<!-- Define que o documento é HTML5 -->
+
+<html>
+<head>
+
+<meta charset="UTF-8">
+<!-- Permite usar caracteres especiais (acentos, ç, etc.) -->
+
+<title>Dashboard Lisímetro</title>
+<!-- Nome que aparece na aba do navegador -->
+
+<!-- Biblioteca para criar gráficos -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<!-- Plugin que permite zoom e arrastar no gráfico -->
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+<style>
+
+/* ===== ESTILO GERAL DA PÁGINA ===== */
+body {
+  margin: 0; /* Remove margem padrão do navegador */
+  font-family: 'Segoe UI', sans-serif; /* Define fonte */
+  background: #f4f6f9; /* Cor de fundo */
+}
+
+/* ===== TELA DE LOGIN ===== */
+#loginScreen {
+  display:flex; /* Usa flexbox */
+  height:100vh; /* Ocupa altura total da tela */
+  justify-content:center; /* Centraliza horizontalmente */
+  align-items:center; /* Centraliza verticalmente */
+  background:#f4f6f9;
+}
+
+/* Caixa branca do login */
+.login-box {
+  background:white;
+  padding:40px;
+  border-radius:12px; /* Bordas arredondadas */
+  box-shadow:0 4px 12px rgba(0,0,0,0.1); /* Sombra suave */
+  width:300px;
+}
+
+/* Campos de input */
+.login-box input {
+  width:100%;
+  padding:10px;
+  margin-bottom:10px;
+  border-radius:6px;
+  border:1px solid #ccc;
+}
+
+/* Botão de login */
+.login-box button {
+  width:100%;
+  padding:10px;
+  background:#2563eb; /* Azul */
+  color:white;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+/* Barra superior do dashboard */
+.header {
+  background: #1f2937;
+  color: white;
+  padding: 20px;
+  font-size: 22px;
+}
+
+/* Container principal */
+.container {
+  display: flex; /* Layout horizontal */
+  padding: 20px;
+  gap: 20px; /* Espaço entre blocos */
+}
+
+/* Cartões brancos */
+.card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+}
+
+/* Área do gráfico ocupa mais espaço */
+.chart-card { flex: 3; }
+
+/* Área lateral de informações */
+.info-card {
+  flex: 1;
+  background: #eef1f5;
+}
+
+/* Bloco de cada métrica */
+.metric { margin-bottom: 25px; }
+
+.metric h3 {
+  margin: 0;
+  font-size: 14px;
+  color: #555;
+}
+
+.metric p {
+  font-size: 22px;
+  margin: 5px 0 0 0;
+  font-weight: bold;
+}
+
+/* Botão de download */
+.download-btn {
+  padding:10px;
+  width:100%;
+  background:#2563eb;
+  color:white;
+  border:none;
+  border-radius:8px;
+  cursor:pointer;
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- ===== TELA DE LOGIN ===== -->
+<div id="loginScreen">
+  <div class="login-box">
+    <h2>Login</h2>
+    <input id="email" type="email" placeholder="Email">
+    <input id="senha" type="password" placeholder="Senha">
+    <button onclick="login()">Entrar</button>
+  </div>
+</div>
+
+<!-- ===== DASHBOARD (inicia escondido) ===== -->
+<div id="dashboard" style="display:none;">
+
+<div class="header">
+  Dashboard Lisímetro Inteligente
+</div>
+
+<div class="container">
+
+  <!-- Área do gráfico -->
+  <div class="card chart-card">
+    <canvas id="grafico"></canvas>
+  </div>
+
+  <!-- Área lateral de informações -->
+  <div class="card info-card">
+
+    <div class="metric">
+      <h3>Peso Atual</h3>
+      <p id="pesoAtual">--</p>
+    </div>
+
+    <div class="metric">
+      <h3>Última Atualização</h3>
+      <p id="horaAtual">--</p>
+    </div>
+
+    <div class="metric">
+      <h3>Total de Leituras</h3>
+      <p id="totalLeituras">0</p>
+    </div>
+
+    <div class="metric">
+      <button class="download-btn" onclick="baixarCSV()">
+        Baixar Dados (CSV)
+      </button>
+    </div>
+
+  </div>
+
+</div>
+</div>
+
+<script type="module">
+
+/* ===== IMPORTA FUNÇÕES DO FIREBASE ===== */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-app.js";
+import { getDatabase, ref, onValue } from "https://www.gstatic.com/firebasejs/9.22.2/firebase-database.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged } 
+from "https://www.gstatic.com/firebasejs/9.22.2/firebase-auth.js";
+
+/* ===== CONFIGURAÇÃO DO FIREBASE ===== */
+const firebaseConfig = {
+  apiKey: "SUA_API_KEY",
+  databaseURL: "SUA_DATABASE_URL"
+};
+
+/* Inicializa o Firebase */
+const app = initializeApp(firebaseConfig);
+
+/* Conecta ao banco de dados */
+const db = getDatabase(app);
+
+/* Conecta ao sistema de autenticação */
+const auth = getAuth(app);
+
+/* Caminho do banco onde estão os pesos */
+const leiturasRef = ref(db, "leituras/peso");
+
+/* Arrays do gráfico */
+let labels = [];
+let valores = [];
+
+/* ===== FUNÇÃO DE LOGIN ===== */
+window.login = function() {
+
+  const email = document.getElementById("email").value;
+  const senha = document.getElementById("senha").value;
+
+  /* Faz login com email e senha */
+  signInWithEmailAndPassword(auth, email, senha)
+    .catch(error => alert("Erro no login: " + error.message));
+};
+
+/* Verifica se usuário está logado */
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("dashboard").style.display = "block";
+  }
+});
+
+/* ===== CRIAÇÃO DO GRÁFICO ===== */
+const ctx = document.getElementById('grafico').getContext('2d');
+
+const chart = new Chart(ctx, {
+  type: 'line', /* Tipo linha */
+  data: {
+    labels: labels,
+    datasets: [{
+      label: 'Peso (kg)',
+      data: valores,
+      borderColor: '#2563eb',
+      backgroundColor: 'rgba(37,99,235,0.1)',
+      tension: 0.3,
+      fill: true
+    }]
+  },
+  options: {
+    responsive: true,
+    plugins: {
+      zoom: {
+        pan: { enabled: true, mode: 'x' },
+        zoom: {
+          wheel: { enabled: true },
+          pinch: { enabled: true },
+          mode: 'x'
+        }
+      }
+    }
+  }
+});
+
+/* ===== ATUALIZAÇÃO AUTOMÁTICA DO FIREBASE ===== */
+onValue(leiturasRef, (snapshot) => {
+
+  labels = [];
+  valores = [];
+
+  /* Percorre cada leitura no banco */
+  snapshot.forEach((child) => {
+    const valor = child.val();
+    labels.push(labels.length + 1);
+    valores.push(parseFloat(valor));
+  });
+
+  /* Atualiza gráfico */
+  chart.data.labels = labels;
+  chart.data.datasets[0].data = valores;
+  chart.update();
+
+  /* Atualiza painel lateral */
+  if (valores.length > 0) {
+
+    const ultimo = valores[valores.length - 1];
+
+    document.getElementById("pesoAtual").innerText =
+      ultimo.toFixed(4) + " kg";
+
+    document.getElementById("horaAtual").innerText =
+      new Date().toLocaleString();
+
+    document.getElementById("totalLeituras").innerText =
+      valores.length;
+  }
+});
+
+/* ===== FUNÇÃO PARA BAIXAR CSV ===== */
+window.baixarCSV = function() {
+
+  let csv = "Indice,Peso(kg)\n";
+
+  for (let i = 0; i < valores.length; i++) {
+    csv += (i+1) + "," + valores[i] + "\n";
+  }
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "medicoes_lisimetro.csv";
+  a.click();
+
+  URL.revokeObjectURL(url);
+};
+
+</script>
+
+</body>
+</html>
